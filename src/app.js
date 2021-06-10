@@ -3,6 +3,18 @@ import cors from 'cors';
 import { existsSync, writeFileSync, readFileSync } from 'fs';
 import { stripHtml } from 'string-strip-html';
 import dayjs from 'dayjs';
+import Joi from 'joi';
+
+const newParticipantSchema = Joi.object({
+  name: Joi.string().min(1).required()
+});
+const newMessageBodySchema = Joi.object({
+  to: Joi.string().min(1).required(),
+  text: Joi.string().min(1).required(),
+  type: Joi.string().regex(/(^message$)|(^private_message$)/).required()
+});
+const newMessageUserSchema = Joi.string().min(1);
+
 
 function getParticipants(){
   return JSON.parse(readFileSync("./data/participants.json")).participants;
@@ -80,8 +92,12 @@ app.get("/messages",(req,res)=>{
 
 app.post("/messages", (req,res)=>{
   const body = req.body;
-  const headers = req.headers;
+  const {error:errBody, value:valBody} = newMessageBodySchema.validate(body);
 
+  const headers = req.headers;
+  const {error:errHeaders, value:valHeaders} = newMessageUserSchema.validate(headers.user);
+
+  
   if (typeof body.to !== "string"){
     res.status(400).send("Invalid input type <to>");
     return;
@@ -131,6 +147,9 @@ app.get("/participants",(req,res)=>{
 
 app.post("/participants",(req,res)=>{
   const body = req.body;
+
+  const {error,value} = newParticipantSchema.validate(req.body);
+
   if (typeof body.name !== "string"){
     res.status(400).send("Invalid input type");
     return;
