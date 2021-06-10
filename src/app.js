@@ -32,11 +32,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.post("/status", (req,res)=>{
+  const user = req.headers.user;
+  const participants = getParticipants();
+  const diskUser = participants.find(u => u.name === user);
+  if (!diskUser){
+    res.status(400).send("User not found");
+    return;
+  }
+  diskUser.lastStatus = Date.now();
+  setParticipants(participants);
+  res.status(200).send("OK");
+});
+
+
 app.get("/messages",(req,res)=>{
   const limit = parseInt(req.query.limit,10);
   const user = req.headers.user;
   const messages = getMessages();
-  console.log(limit);
   const filteredMessages = messages.filter(m => {
     return (
       m.type === "message" 
@@ -82,7 +95,7 @@ app.post("/messages", (req,res)=>{
   }
 
   const participants = getParticipants();
-  if (participants.indexOf(user) === -1){
+  if (!participants.find(p => p.name === user)){
     res.status(400).send("Sender is not on the list");
     return;   
   }
