@@ -32,6 +32,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+setInterval(()=>{
+  const participants = getParticipants();
+  const messages = getMessages();
+  const timestamp = Date.now();
+  const activeParticipants = participants.filter(p => timestamp - p.lastStatus < 10000);
+  const inactiveParticipants = participants.filter(p => timestamp - p.lastStatus >= 10000);
+  const time = dayjs(Date.now()).format("HH-mm-ss");
+  inactiveParticipants.forEach((participant)=>{
+    messages.push({from: participant.name, to:"Todos", text:"sai da sala...", type:"status", time});
+  })
+  setMessages(messages);
+  setParticipants(activeParticipants);
+}, 15000)
+
+
 app.post("/status", (req,res)=>{
   const user = req.headers.user;
   const participants = getParticipants();
