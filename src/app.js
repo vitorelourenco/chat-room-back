@@ -38,6 +38,7 @@ app.get("/messages",(req,res)=>{
 
 app.get("/participants",(req,res)=>{
   const participants = getParticipants();
+  res.status(200).send(participants);
 });
 
 app.post("/participants",(req,res)=>{
