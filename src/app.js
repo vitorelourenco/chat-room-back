@@ -33,7 +33,21 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/messages",(req,res)=>{
+  const limit = parseInt(req.query.limit,10);
+  const user = req.headers.user;
   const messages = getMessages();
+  console.log(limit);
+  const filteredMessages = messages.filter(m => {
+    return (
+      m.type === "message" 
+      || m.type === "status" 
+      || m.from === user
+      || m.to === user
+    );
+  });
+
+  if (limit > 0) res.status(200).send(filteredMessages.slice(-limit));
+  else res.status(200).send(filteredMessages);
 });
 
 app.post("/messages", (req,res)=>{
