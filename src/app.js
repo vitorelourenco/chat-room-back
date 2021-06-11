@@ -6,9 +6,6 @@ import dayjs from "dayjs";
 import Joi from "joi";
 
 //validation schemas
-const newParticipantSchema = Joi.object({
-  name: Joi.string().min(1).required(),
-});
 const newMessageBodySchema = Joi.object({
   to: Joi.string().min(1).required(),
   text: Joi.string().min(1).required(),
