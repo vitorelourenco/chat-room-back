@@ -1,69 +1,117 @@
-import express from 'express';
-import cors from 'cors';
-import { existsSync, writeFileSync, readFileSync } from 'fs';
-import { stripHtml } from 'string-strip-html';
-import dayjs from 'dayjs';
-import Joi from 'joi';
+import express from "express";
+import cors from "cors";
+import { existsSync, writeFileSync, readFileSync } from "fs";
+import { stripHtml } from "string-strip-html";
+import dayjs from "dayjs";
+import Joi from "joi";
 
+//validation schemas
 const newParticipantSchema = Joi.object({
-  name: Joi.string().min(1).required()
+  name: Joi.string().min(1).required(),
 });
 const newMessageBodySchema = Joi.object({
   to: Joi.string().min(1).required(),
   text: Joi.string().min(1).required(),
-  type: Joi.string().regex(/(^message$)|(^private_message$)/).required()
+  type: Joi.string()
+    .regex(/(^message$)|(^private_message$)/)
+    .required(),
 });
-const newMessageUserSchema = Joi.string().min(1);
+const userSchema = Joi.string().min(1);
+//
 
+//Validation functions
+function validateUser(userName) {
+  let user = userName;
+  try {
+    user = stripHtml(user).result.trim();
+  } catch {
+    return {
+      value: undefined,
+      errorFunction: (res) => res.status(400).send("Invalid input type"),
+    };
+  }
 
-function getParticipants(){
+  const { error: errUser } = userSchema.validate(user);
+  if (errUser) {
+    return {
+      value: undefined,
+      errorFunction: (res) => res.status(400).send(`${errUser}`),
+    };
+  }
+
+  return { value: user, errorFunction: undefined };
+}
+
+//"database" access
+function getParticipants() {
   return JSON.parse(readFileSync("./data/participants.json")).participants;
 }
 
-function setParticipants(participants){
-  writeFileSync("./data/participants.json", JSON.stringify({participants}));
+function setParticipants(participants) {
+  writeFileSync("./data/participants.json", JSON.stringify({ participants }));
 }
 
-function getMessages(){
+function getMessages() {
   return JSON.parse(readFileSync("./data/messages.json")).messages;
 }
 
-function setMessages(messages){
-  writeFileSync("./data/messages.json", JSON.stringify({messages}));
+function setMessages(messages) {
+  writeFileSync("./data/messages.json", JSON.stringify({ messages }));
 }
+//
 
-if (!existsSync("./data/participants.json")){
+//Server initialization
+if (!existsSync("./data/participants.json")) {
   setParticipants([]);
 }
 
-if (!existsSync("./data/messages.json")){
+if (!existsSync("./data/messages.json")) {
   setMessages([]);
 }
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+//
 
-setInterval(()=>{
+//Auto-kick inactive users
+setInterval(() => {
   const participants = getParticipants();
   const messages = getMessages();
   const timestamp = Date.now();
-  const activeParticipants = participants.filter(p => timestamp - p.lastStatus < 10000);
-  const inactiveParticipants = participants.filter(p => timestamp - p.lastStatus >= 10000);
+  const activeParticipants = participants.filter(
+    (p) => timestamp - p.lastStatus < 10000
+  );
+  const inactiveParticipants = participants.filter(
+    (p) => timestamp - p.lastStatus >= 10000
+  );
   const time = dayjs(Date.now()).format("HH-mm-ss");
-  inactiveParticipants.forEach((participant)=>{
-    messages.push({from: participant.name, to:"Todos", text:"sai da sala...", type:"status", time});
-  })
+  inactiveParticipants.forEach((participant) => {
+    messages.push({
+      from: participant.name,
+      to: "Todos",
+      text: "sai da sala...",
+      type: "status",
+      time,
+    });
+  });
   setMessages(messages);
   setParticipants(activeParticipants);
-}, 15000)
+}, 15000);
 
+//Allow user to prevent auto-kick
+app.post("/status", (req, res) => {
+  const { value: user, errorFunction: rejectUser } = validateUser(
+    req.headers.user
+  );
+  if (rejectUser) {
+    rejectUser(res);
+    return;
+  }
 
-app.post("/status", (req,res)=>{
-  const user = req.headers.user;
   const participants = getParticipants();
-  const diskUser = participants.find(u => u.name === user);
-  if (!diskUser){
+  const diskUser = participants.find((u) => u.name === user);
+  if (!diskUser) {
     res.status(400).send("User not found");
     return;
   }
@@ -72,17 +120,25 @@ app.post("/status", (req,res)=>{
   res.status(200).send("OK");
 });
 
+//Deliver all authorized messages or a limited number of authorized messages to the request source
+app.get("/messages", (req, res) => {
+  const { value: user, errorFunction: rejectUser } = validateUser(
+    req.headers.user
+  );
+  if (rejectUser) {
+    rejectUser(res);
+    return;
+  }
 
-app.get("/messages",(req,res)=>{
-  const limit = parseInt(req.query.limit,10);
-  const user = req.headers.user;
+  const limit = parseInt(req.query.limit, 10);
   const messages = getMessages();
-  const filteredMessages = messages.filter(m => {
+  const filteredMessages = messages.filter((m) => {
     return (
-      m.type === "message" 
-      || m.type === "status" 
-      || m.from === user
-      || m.to === user
+      m.type === "message" ||
+      m.type === "status" ||
+      m.from === user ||
+      m.to === user ||
+      m.to === "Todos"
     );
   });
 
@@ -90,94 +146,87 @@ app.get("/messages",(req,res)=>{
   else res.status(200).send(filteredMessages);
 });
 
-app.post("/messages", (req,res)=>{
+//Post new message
+app.post("/messages", (req, res) => {
   const body = req.body;
-  const {error:errBody, value:valBody} = newMessageBodySchema.validate(body);
-
-  const headers = req.headers;
-  const {error:errHeaders, value:valHeaders} = newMessageUserSchema.validate(headers.user);
-
-  
-  if (typeof body.to !== "string"){
-    res.status(400).send("Invalid input type <to>");
-    return;
-  }
-  if (typeof body.text !== "string"){
-    res.status(400).send("Invalid input type <text>");
-    return;
-  }
-  if (typeof body.type !== "string"){
-    res.status(400).send("Invalid input type <type>");
-    return;
-  }
-  if (typeof headers.user !== "string"){
-    res.status(400).send("Invalid input type <user>");
-    return;
-  }
-
-  const to = stripHtml(body.to).result.trim();
-  const text = stripHtml(body.text).result.trim();
-  const type = stripHtml(body.type).result.trim();
-  const user = stripHtml(headers.user).result.trim();
-
-  if (!(type==="message"||type==="private_message")){
-    res.status(400).send("Invalid input message <type>");
-    return;   
-  }
-
-  const participants = getParticipants();
-  if (!participants.find(p => p.name === user)){
-    res.status(400).send("Sender is not on the list");
-    return;   
-  }
-
-  const messages = getMessages();
-  const time = dayjs(Date.now()).format("HH-mm-ss");
-  const message = {from: user, to, text, type, time}
-  messages.push(message);
-  setMessages(messages);
-
-  res.status(200).send("OK");
-})
-
-app.get("/participants",(req,res)=>{
-  const participants = getParticipants();
-  res.status(200).send(participants);
-});
-
-app.post("/participants",(req,res)=>{
-  const body = req.body;
-
-  const {error,value} = newParticipantSchema.validate(req.body);
-
-  if (typeof body.name !== "string"){
+  try {
+    Object.keys(body).forEach((key) => {
+      body[key] = stripHtml(body[key]).result.trim();
+    });
+  } catch {
     res.status(400).send("Invalid input type");
     return;
   }
 
-  const name = stripHtml(body.name).result.trim();
-  if (name === "") {
-    res.status(400).send("Name is empty");
+  const { error: errBody } = newMessageBodySchema.validate(body);
+  if (errBody) {
+    res.status(400).send(`${errBody}`);
+    return;
+  }
+
+  const { value: user, errorFunction: rejectUser } = validateUser(
+    req.headers.user
+  );
+  if (rejectUser) {
+    rejectUser(res);
     return;
   }
 
   const participants = getParticipants();
-  if (participants.indexOf(name) !== -1){
-    res.status(409).send("Name is already in use");
+  if (!participants.find((p) => p.name === user)) {
+    res.status(400).send("Sender is not on the list");
     return;
-  } 
-
-  const lastStatus = Date.now();
-  participants.push({name, lastStatus});
-  setParticipants(participants);
+  }
 
   const messages = getMessages();
-  const time = dayjs(lastStatus).format("HH-mm-ss");
-  const message = {from: name, to:"Todos", text:"entra na sala...", type:"status", time}
+  const time = dayjs(Date.now()).format("HH-mm-ss");
+  const message = { from: user, time, ...body };
   messages.push(message);
   setMessages(messages);
 
   res.status(200).send("OK");
 });
 
-app.listen(4000, ()=>console.log('app is listening to port 4000'));
+//Get list of participants
+app.get("/participants", (_, res) => {
+  const participants = getParticipants();
+  res.status(200).send(participants);
+});
+
+//Join the room
+app.post("/participants", (req, res) => {
+  const { value: name, errorFunction: rejectName } = validateUser(
+    req.body.name
+  );
+  if (rejectName) {
+    rejectName(res);
+    return;
+  }
+
+  const participants = getParticipants();
+  if (participants.find((p) => p.name === name)) {
+    res.status(409).send("Name is already in use");
+    return;
+  }
+
+  const lastStatus = Date.now();
+  participants.push({ name, lastStatus });
+  setParticipants(participants);
+
+  const messages = getMessages();
+  const time = dayjs(lastStatus).format("HH-mm-ss");
+  const message = {
+    from: name,
+    to: "Todos",
+    text: "entra na sala...",
+    type: "status",
+    time,
+  };
+  messages.push(message);
+  setMessages(messages);
+
+  res.status(200).send("OK");
+});
+
+//Fire
+app.listen(4000, () => console.log("app is listening to port 4000"));
