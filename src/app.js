@@ -13,7 +13,7 @@ const newMessageBodySchema = Joi.object({
     .regex(/(^message$)|(^private_message$)/)
     .required(),
 });
-const userSchema = Joi.string().min(1);
+const userSchema = Joi.string().min(1).required();
 //
 
 //Validation functions
@@ -82,7 +82,7 @@ setInterval(() => {
   const inactiveParticipants = participants.filter(
     (p) => timestamp - p.lastStatus >= 10000
   );
-  const time = dayjs(Date.now()).format("HH-mm-ss");
+  const time = dayjs(timestamp).format("HH-mm-ss");
   inactiveParticipants.forEach((participant) => {
     messages.push({
       from: participant.name,
